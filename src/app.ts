@@ -2,6 +2,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import express from "express";
 import type { ErrorRequestHandler, Request } from "express";
 import type { openDatabase } from "./database.js";
+import { DatabaseUnavailableError } from "./database-service.js";
 
 type Database = Awaited<ReturnType<typeof openDatabase>>;
 
@@ -116,6 +117,10 @@ export function createApp(database: Database, apiKey: string) {
     response.status(404).json({ error: "Route not found" });
   });
   const handleError: ErrorRequestHandler = (error, _request, response, _next) => {
+    if (error instanceof DatabaseUnavailableError) {
+      response.status(503).json({ error: "Database is not ready" });
+      return;
+    }
     console.error("API query failed:", error instanceof Error ? error.message : "Unknown error");
     response.status(500).json({ error: "Unable to retrieve data" });
   };

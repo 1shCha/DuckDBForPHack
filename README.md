@@ -18,8 +18,9 @@ Run `npm run dev`. The default port is 3001; override it with `PORT`.
 - `GET /health/db` returns `{"status":"ok","database":"ok"}` after querying
   the expected `property_coverage` view, or HTTP 503 if the check fails.
 
-Startup requires a readable, existing database with populated `property_coverage`.
+Normal startup requires a readable, existing database with populated `property_coverage`.
 The API opens it read-only and fails startup for missing or incompatible files.
+For the first cloud upload, the explicit setup mode below permits an absent file.
 Close any other DuckDB client holding a writer connection before starting the API.
 Stop the API before rebuilding or replacing the database; restart it afterward.
 The health routes do not return property records.
@@ -34,7 +35,7 @@ Deploy as a Web Service. Use `npm ci && npm run build` as the build command and
 `npm start` as the start command. Attach a persistent disk at `/var/data`, transfer
 the database to `/var/data/commercial_clean.duckdb`, and set `DUCKDB_PATH` to that
 path in the service environment. Render supplies `PORT`. Use `/health/db` as the
-health check path. The disk must contain the database before the API can start.
+health check path after the initial upload. See the first-upload procedure below.
 
 ## Data endpoints
 
@@ -93,3 +94,41 @@ Run `npm test` for build, authentication, input validation, pagination, rate-lim
 and error-response checks. Tests use an injected database stub and no private
 source data. The endpoints have also been manually checked against the local
 commercial DuckDB database.
+
+## First upload to Render
+
+The initial persistent disk is empty. For this first deployment only:
+
+1. Ensure the paid service has a disk mounted at `/var/data`.
+2. Set `DATABASE_SETUP_MODE=true` in Render's environment settings. Keep
+   `DUCKDB_PATH=/var/data/commercial_clean.duckdb` and your private `API_KEY`.
+3. Set the health check path to `/health` in the service settings, and deploy the
+   latest commit. The server will run while `/health/db` and authenticated data
+   routes return 503 until the database is available.
+4. Configure an SSH public key in your Render account, and obtain the service's
+   SSH destination from **Connect → SSH**. Render documents this at
+   https://render.com/docs/ssh. Upload to the running service (not an ephemeral
+   shell, which does not share the persistent disk).
+5. Close any local database writer before copying. From your Mac, upload the file
+   to a temporary filename so the API cannot open a partial upload. Replace
+   `USER@HOST` below with the destination from Render's SSH command:
+
+   ```sh
+   scp "/Users/ishaanchakraborty/Desktop/CostarRelated/costar-hackathon-kit/consolidated-db/processed/commercial_clean.duckdb" USER@HOST:/var/data/commercial_clean.duckdb.upload
+   ```
+
+6. In the service's dashboard Shell, run:
+
+   ```sh
+   mv /var/data/commercial_clean.duckdb.upload /var/data/commercial_clean.duckdb
+   ```
+
+7. Visit `/health/db`. It should return HTTP 200 with `database: "ok"`; the next
+   database request automatically opens the completed file read-only.
+8. Set `DATABASE_SETUP_MODE=false`, restore the deployment health check to
+   `/health/db`, and redeploy. Subsequent restarts require the existing database.
+
+`render.yaml` enables first-upload setup mode and uses `/health` initially. A
+service created manually in the dashboard needs these settings applied manually.
+Setup mode never creates an empty database, exposes SQL, or bypasses API keys.
+Invalid existing databases still fail the initial startup check.

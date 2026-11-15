@@ -5,7 +5,7 @@ services:
     plan: starter
     buildCommand: npm ci --include=dev && npm run build
     startCommand: npm start
-    healthCheckPath: /health/db
+    healthCheckPath: /health # Initial upload; change to /health/db after setup.
     disk:
       name: duckdb-data
       mountPath: /var/data
@@ -17,5 +17,7 @@ services:
         value: 22
       - key: DUCKDB_PATH
         value: /var/data/commercial_clean.duckdb
+      - key: DATABASE_SETUP_MODE
+        value: "true"
       - key: API_KEY
         generateValue: true
