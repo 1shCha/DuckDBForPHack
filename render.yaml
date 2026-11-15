@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: duckdb-for-phack-api
+    runtime: node
+    plan: starter
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /health/db
+    disk:
+      name: duckdb-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: 22
+      - key: DUCKDB_PATH
+        value: /var/data/commercial_clean.duckdb
+      - key: API_KEY
+        generateValue: true
