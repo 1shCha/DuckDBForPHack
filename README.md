@@ -157,3 +157,10 @@ configured it uses these operations and does not fall back to local data on an
 API error. Local DuckDB is only used by its tools when both backend settings are
 absent. No environment changes are needed for an app already configured with
 this service's URL and matching key.
+
+The target app branch's tenant search also uses `/tools/search_candidates`
+with `{sqft_min?, sqft_max?, city?}`. It preserves the original 15% size slack,
+rent/history joins, and suite scan associations. The app keeps its own business
+profile scoring, saved inspection data, result ordering, and UI. Size bounds
+must be finite nonnegative numbers no greater than 1e9; results are bounded to
+10000 candidates and broad oversized requests are rejected instead of truncated.
