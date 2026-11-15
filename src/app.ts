@@ -2,6 +2,8 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import express from "express";
 import type { ErrorRequestHandler, Request } from "express";
 import type { openDatabase } from "./database.js";
+import { createCostarTools, ToolValidationError } from "./costar-tools.js";
+import { createSpatialTool } from "./spatial-tool.js";
 import { DatabaseUnavailableError } from "./database-service.js";
 
 type Database = Awaited<ReturnType<typeof openDatabase>>;
@@ -29,7 +31,7 @@ export function createApp(database: Database, apiKey: string) {
   let windowStart = Date.now();
   let requests = 0;
   let active = 0;
-  app.use("/properties", (request, response, next) => {
+  app.use(["/properties", "/tools"], (request, response, next) => {
     const provided = createHash("sha256").update(request.get("X-API-Key") ?? "").digest();
     if (!timingSafeEqual(expectedKey, provided)) {
       response.status(401).json({ error: "Unauthorized" });
@@ -45,6 +47,62 @@ export function createApp(database: Database, apiKey: string) {
     // Keep the slot until the handler finishes, even if the client disconnects.
     response.locals.release = () => { active--; };
     next();
+  });
+
+  const tools = { ...createCostarTools(database.query), get_spatial_context: createSpatialTool(database.query) };
+  // Fixed operations only: callers cannot submit SQL or choose table names.
+  const fields: Record<string, string[]> = {
+    find_properties: ["query", "city", "state", "limit", "offset"],
+    find_suites: ["property_id", "suite", "property_floor_id", "limit", "offset"],
+    get_tenant_history: ["suite_id"],
+    get_spatial_context: ["property_id", "suite_id"],
+    database_health: [],
+  };
+  app.use("/tools", express.json({ limit: "16kb", strict: true }));
+  app.post("/tools/:name", async (request, response) => {
+    try {
+      const name = request.params.name as string;
+      if (!Object.hasOwn(fields, name)) {
+        response.status(404).json({ error: "Tool not found" });
+        return;
+      }
+      const input: unknown = request.body;
+      if (!input || typeof input !== "object" || Array.isArray(input) ||
+          Object.entries(input).some(([key, value]) => !fields[name]!.includes(key) ||
+            (typeof value === "string" && value.length > 300)) ||
+          ("offset" in input && (typeof input.offset !== "number" || input.offset > 100_000))) {
+        throw new ToolValidationError("Invalid tool arguments or unsupported fields.");
+      }
+      let result: unknown;
+      if (name === "database_health") {
+        [result] = await database.query(`SELECT version() AS version,
+          current_setting('access_mode') AS access_mode,
+          (SELECT count(*) FROM properties) AS property_count,
+          (SELECT count(*) FROM suites) AS suite_count,
+          (SELECT count(*) FROM suite_history) AS suite_history_count,
+          (SELECT count(*) FROM deals_normalized) AS rent_evidence_count`);
+      } else {
+        const operation = tools[name as keyof typeof tools];
+        // Runtime validation is performed by the selected operation.
+        result = await operation(input as never);
+      }
+      response.json(result);
+    } finally {
+      response.locals.release?.();
+      response.locals.release = undefined;
+    }
+  });
+  // Parser errors skip route handlers, so release their admission slot here.
+  const releaseToolError: ErrorRequestHandler = (error, _request, response, next) => {
+    response.locals.release?.();
+    response.locals.release = undefined;
+    next(error);
+  };
+  app.use("/tools", releaseToolError);
+  app.use("/tools", (_request, response) => {
+    response.locals.release?.();
+    response.locals.release = undefined;
+    response.status(404).json({ error: "Route not found" });
   });
 
   function integer(value: unknown, fallback: number, max: number) {
@@ -117,6 +175,18 @@ export function createApp(database: Database, apiKey: string) {
     response.status(404).json({ error: "Route not found" });
   });
   const handleError: ErrorRequestHandler = (error, _request, response, _next) => {
+    if (error instanceof ToolValidationError) {
+      response.status(400).json({ error: error.message });
+      return;
+    }
+    if (error?.type === "entity.too.large") {
+      response.status(413).json({ error: "Request body is too large" });
+      return;
+    }
+    if (error?.type === "entity.parse.failed") {
+      response.status(400).json({ error: "Provide valid JSON" });
+      return;
+    }
     if (error instanceof DatabaseUnavailableError) {
       response.status(503).json({ error: "Database is not ready" });
       return;

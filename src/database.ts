@@ -15,7 +15,7 @@ export async function openDatabase(configuredPath: string | undefined) {
   }
 
   // Never create an empty database or modify the supplied data.
-  const instance = await DuckDBInstance.create(path, { access_mode: "READ_ONLY" });
+  const instance = await DuckDBInstance.create(path, { access_mode: "READ_ONLY", enable_external_access: "false" });
 
   async function check() {
     const connection = await instance.connect();

@@ -132,3 +132,28 @@ The initial persistent disk is empty. For this first deployment only:
 service created manually in the dashboard needs these settings applied manually.
 Setup mode never creates an empty database, exposes SQL, or bypasses API keys.
 Invalid existing databases still fail the initial startup check.
+
+## Next.js database tools
+
+The Next.js app now uses these authenticated, fixed operations via POST:
+
+- `/tools/find_properties`: `{query, city?, state?, limit?, offset?}`
+- `/tools/find_suites`: `{property_id, suite?, property_floor_id?, limit?, offset?}`
+- `/tools/get_tenant_history`: `{suite_id}`
+- `/tools/get_spatial_context`: `{property_id, suite_id?}`
+- `/tools/database_health`: `{}`
+
+Use `X-API-Key` on every operation. Responses preserve the app's existing
+property/suite pagination, supported vs. candidate history, issues, and source
+references. No arbitrary SQL endpoint is provided. Property/floor IDs in these
+tools are decimal BIGINT strings; suite IDs are 64-character hexadecimal strings.
+Bodies are limited to 16 KB, strings to 300 characters, list limits to 100, and
+pagination offsets to 100000. Unknown fields/operations and invalid input are
+rejected. Tools share the same authenticated rate/concurrency budget as the
+property routes. The app's backend client applies a 20-second timeout.
+
+The Next.js server reads `BACKEND_API_URL` and `BACKEND_API_KEY` directly. When
+configured it uses these operations and does not fall back to local data on an
+API error. Local DuckDB is only used by its tools when both backend settings are
+absent. No environment changes are needed for an app already configured with
+this service's URL and matching key.
