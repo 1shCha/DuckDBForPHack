@@ -44,7 +44,7 @@ export function createSearchCandidates(query: Awaited<ReturnType<typeof openData
       SELECT suite_id, list({company: company_name, industry: resolved_industry_label,
         "from": strftime(timeline_start, '%Y-%m-%d'), "to": strftime(to_date, '%Y-%m-%d')} ORDER BY timeline_start) AS past
       FROM suite_history GROUP BY suite_id)
-    SELECT pk.suite_id, pk.suite, pk.city, pk.sqft, pk.building_name, pk.street, pk.property_type, pk.latitude, pk.longitude,
+    SELECT pk.suite_id, pk.property_id, pk.suite, pk.city, pk.sqft, pk.building_name, pk.street, pk.property_type, pk.latitude, pk.longitude,
       sc.model_ids, a.asking, sg.signed, sg.n_signed, ps.past
     FROM picked pk LEFT JOIN scan sc USING (suite_id) LEFT JOIN asking a USING (suite_id)
       LEFT JOIN signed sg ON sg.property_id = pk.property_id LEFT JOIN past ps USING (suite_id)

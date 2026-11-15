@@ -3,6 +3,7 @@ import express from "express";
 import type { ErrorRequestHandler, Request } from "express";
 import type { openDatabase } from "./database.js";
 import { createCostarTools, ToolValidationError } from "./costar-tools.js";
+import { createSuiteDetailTools } from "./suite-detail-tools.js";
 import { createSearchCandidates } from "./search-candidates.js";
 import { createSpatialTool } from "./spatial-tool.js";
 import { DatabaseUnavailableError } from "./database-service.js";
@@ -50,7 +51,7 @@ export function createApp(database: Database, apiKey: string) {
     next();
   });
 
-  const tools = { ...createCostarTools(database.query), get_spatial_context: createSpatialTool(database.query), search_candidates: createSearchCandidates(database.query) };
+  const tools = { ...createCostarTools(database.query), get_spatial_context: createSpatialTool(database.query), search_candidates: createSearchCandidates(database.query), ...createSuiteDetailTools(database.query) };
   // Fixed operations only: callers cannot submit SQL or choose table names.
   const fields: Record<string, string[]> = {
     find_properties: ["query", "city", "state", "limit", "offset"],
@@ -59,6 +60,9 @@ export function createApp(database: Database, apiKey: string) {
     get_spatial_context: ["property_id", "suite_id"],
     database_health: [],
     search_candidates: ["sqft_min", "sqft_max", "city"],
+    get_building_tenants: ["property_id"],
+    get_rent_comps: ["property_id", "radius_miles"],
+    find_expiring_leases: ["latitude", "longitude", "industries", "sqft_min", "sqft_max", "radius_miles"],
   };
   app.use("/tools", express.json({ limit: "16kb", strict: true }));
   app.post("/tools/:name", async (request, response) => {
